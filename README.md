@@ -60,13 +60,19 @@ Use stdio if you prefer zero “run the server” step and only one client.
 
 ## Cursor integration
 
-**HTTP (recommended):** Run the server once (e.g. `devenv up` or the HTTP command above), then add the server in Cursor by **URL**:
+**HTTP (recommended):** Run the server once (e.g. `devenv up` or the HTTP command above), then add the server in Cursor by URL. Example MCP config (e.g. in Cursor Settings → MCP or `.cursor/mcp.json`):
 
-1. **Cursor Settings** → **Features** → **MCP** → **Add new MCP server**
-2. Choose **SSE** (or the HTTP/URL option your Cursor version offers)
-3. Set the URL to **`http://localhost:8000/mcp`** (or your host/port; see [Cursor + FastMCP](https://gofastmcp.com/integrations/cursor) for the exact endpoint format Cursor expects)
+```json
+{
+  "mcpServers": {
+    "project-dev": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
 
-All Cursor windows and other clients can use the same running server.
+If your Cursor version uses a different shape (e.g. `transport: "sse"` with a separate `url`), see [Cursor + FastMCP](https://gofastmcp.com/integrations/cursor). Use your actual host/port if not localhost. All Cursor windows and other clients can use the same running server.
 
 **Stdio (alternative):** Cursor runs the server itself. In MCP settings use a **command** instead of a URL:
 
