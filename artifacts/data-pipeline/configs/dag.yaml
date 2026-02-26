@@ -1,0 +1,13 @@
+# Example DAG config for data pipeline context.
+# Use artifact://data-pipeline/configs/dag.yaml
+name: example-dag
+schedule: "0 * * * *"  # hourly
+tasks:
+  - id: extract
+    type: extract
+  - id: transform
+    type: transform
+    deps: [extract]
+  - id: load
+    type: load
+    deps: [transform]

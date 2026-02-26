@@ -5,6 +5,7 @@ Exposes predefined artifacts (templates, configs, code) as Resources and
 project lifecycle operations as Tools. Use with Cursor or any MCP client.
 """
 
+import fnmatch
 import json
 import logging
 import os
@@ -188,6 +189,141 @@ def write_file(path: str, content: str) -> str:
 
 
 @mcp.tool(
+    tags={"files"},
+    annotations={"readOnlyHint": True},
+)
+def read_file(path: str) -> str:
+    """Read a file at path (relative to PROJECT_MCP_ROOT or cwd). Returns content or error."""
+    logger.info("read_file path=%s", path)
+    try:
+        resolved = resolve_file_path(path)
+    except ValueError as e:
+        logger.warning("read_file path error: %s", e)
+        return f"Error: {e}"
+    if not resolved.exists():
+        return f"Error: File not found: {path}"
+    if resolved.is_dir():
+        return f"Error: Path is a directory, not a file: {path}"
+    try:
+        return resolved.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        logger.warning("read_file read error: %s", e)
+        return f"Error: Could not read file: {e}"
+
+
+@mcp.tool(
+    tags={"files"},
+    annotations={"readOnlyHint": True},
+)
+def list_directory(path: str = ".") -> str:
+    """List directory contents at path (relative to PROJECT_MCP_ROOT or cwd). One level only."""
+    logger.info("list_directory path=%s", path)
+    try:
+        resolved = resolve_project_path(path)
+    except ValueError as e:
+        logger.warning("list_directory path error: %s", e)
+        return f"Error: {e}"
+    if not resolved.exists():
+        return f"Error: Path does not exist: {path}"
+    if not resolved.is_dir():
+        return f"Error: Path is not a directory: {path}"
+    lines = [f"Path: {resolved}"]
+    for p in sorted(resolved.iterdir()):
+        kind = "dir" if p.is_dir() else "file"
+        size = p.stat().st_size if p.is_file() else 0
+        lines.append(f"  {kind}: {p.name} ({size} bytes)" if size else f"  {kind}: {p.name}")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    tags={"files"},
+    annotations={"readOnlyHint": True},
+)
+def search_files(
+    project_path: str,
+    pattern: str,
+    include: str | None = None,
+    exclude: str | None = None,
+    max_matches: int = 200,
+) -> str:
+    """Search for regex in project files. include/exclude globs. Returns path:line_num: line."""
+    logger.info("search_files project_path=%s pattern=%s", project_path, pattern)
+    try:
+        root = resolve_project_path(project_path)
+    except ValueError as e:
+        return f"Error: {e}"
+    if not root.is_dir():
+        return f"Error: Project path is not a directory: {project_path}"
+    try:
+        regex = re.compile(pattern)
+    except re.error as e:
+        return f"Error: Invalid regex: {e}"
+    include_glob = include or "*"
+    out: list[str] = []
+    n = 0
+    for p in sorted(root.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = str(p.relative_to(root)).replace("\\", "/")
+        if exclude and fnmatch.fnmatch(rel, exclude):
+            continue
+        if not fnmatch.fnmatch(rel, include_glob):
+            continue
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            if n >= max_matches:
+                out.append(f"(truncated at {max_matches} matches)")
+                return "\n".join(out)
+            if regex.search(line):
+                out.append(f"{rel}:{i}: {line.strip()}")
+                n += 1
+    return "\n".join(out) if out else "(no matches)"
+
+
+@mcp.tool(
+    tags={"files"},
+    annotations={"destructiveHint": True},
+)
+def edit_file(
+    path: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = True,
+) -> str:
+    """Replace old_string with new_string in file. replace_all: all (default) or first only."""
+    logger.info("edit_file path=%s", path)
+    try:
+        resolved = resolve_file_path(path)
+    except ValueError as e:
+        logger.warning("edit_file path error: %s", e)
+        return f"Error: {e}"
+    if not resolved.exists():
+        return f"Error: File not found: {path}"
+    if resolved.is_dir():
+        return f"Error: Path is a directory: {path}"
+    try:
+        content = resolved.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return f"Error: Could not read file: {e}"
+    if old_string not in content:
+        return "Error: old_string not found in file (exact match required)"
+    if replace_all:
+        new_content = content.replace(old_string, new_string)
+        count = content.count(old_string)
+    else:
+        new_content = content.replace(old_string, new_string, 1)
+        count = 1
+    try:
+        resolved.write_text(new_content, encoding="utf-8")
+    except OSError as e:
+        return f"Error: Could not write file: {e}"
+    return f"Replaced {count} occurrence(s) in {resolved}"
+
+
+@mcp.tool(
     tags={"test"},
     annotations={"readOnlyHint": False},
 )
@@ -287,12 +423,17 @@ def run_command(
     command: str,
     env: dict[str, str] | None = None,
 ) -> str:
-    """Run a single command in the project directory (e.g. python main.py, npm start)."""
+    """Run a command in project dir. Allowed prefixes: PROJECT_MCP_ALLOWED_COMMANDS or default."""
     try:
         root = resolve_project_path(project_path)
     except ValueError as e:
         return f"Error: {e}"
-    allowlist = ("python", "npm", "npx", "uv", "pip", "node", "pytest", "make")
+    env_allowlist = os.environ.get("PROJECT_MCP_ALLOWED_COMMANDS")
+    allowlist = (
+        tuple(s.strip().lower() for s in env_allowlist.split(",") if s.strip())
+        if env_allowlist
+        else ("python", "npm", "npx", "uv", "pip", "node", "pytest", "make")
+    )
     parts = command.strip().split()
     if not parts or parts[0].lower() not in allowlist:
         return f"Command must start with one of: {allowlist}"
@@ -430,6 +571,13 @@ def update_config(project_path: str, key: str, value: str) -> str:
 
 def main() -> None:
     """Entry point for the project-mcp CLI."""
+    root_env = os.environ.get("PROJECT_MCP_ROOT")
+    if root_env:
+        root_path = Path(root_env).resolve()
+        if not root_path.exists():
+            logger.warning("PROJECT_MCP_ROOT does not exist: %s", root_path)
+        elif not root_path.is_dir():
+            logger.warning("PROJECT_MCP_ROOT is not a directory: %s", root_path)
     transport = os.environ.get("MCP_TRANSPORT", "http")
     if transport == "http":
         port = int(os.environ.get("MCP_PORT", "8000"))

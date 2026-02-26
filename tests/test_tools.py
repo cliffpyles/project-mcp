@@ -71,6 +71,161 @@ def test_write_file_traversal_rejected(project_root_env):
     assert "root" in result.lower()
 
 
+def test_read_file(project_root_env):
+    """read_file returns file content."""
+    root = project_root_env
+    (root / "foo.txt").write_text("hello world")
+    result = server_module.read_file(path="foo.txt")
+    assert result == "hello world"
+
+
+def test_read_file_traversal_rejected(project_root_env):
+    """read_file rejects path traversal."""
+    result = server_module.read_file(path="../../../etc/passwd")
+    assert "Error" in result
+    assert "root" in result.lower()
+
+
+def test_read_file_not_found(project_root_env):
+    """read_file returns error when file does not exist."""
+    result = server_module.read_file(path="nonexistent.txt")
+    assert "Error" in result
+    assert "not found" in result.lower()
+
+
+def test_read_file_directory_rejected(project_root_env):
+    """read_file returns error when path is a directory."""
+    root = project_root_env
+    (root / "adir").mkdir()
+    result = server_module.read_file(path="adir")
+    assert "Error" in result
+    assert "directory" in result.lower()
+
+
+def test_list_directory(project_root_env):
+    """list_directory returns entries with type and size."""
+    root = project_root_env
+    (root / "a.txt").write_text("hi")
+    (root / "subdir").mkdir()
+    result = server_module.list_directory(path=".")
+    assert "Path:" in result
+    assert "file: a.txt" in result
+    assert "dir: subdir" in result
+
+
+def test_list_directory_traversal_rejected(project_root_env):
+    """list_directory rejects path traversal."""
+    result = server_module.list_directory(path="../../../etc")
+    assert "Error" in result
+    assert "root" in result.lower()
+
+
+def test_list_directory_not_found(project_root_env):
+    """list_directory returns error when path does not exist."""
+    result = server_module.list_directory(path="nonexistent")
+    assert "Error" in result
+    assert "not exist" in result.lower()
+
+
+def test_list_directory_file_rejected(project_root_env):
+    """list_directory returns error when path is a file."""
+    root = project_root_env
+    (root / "f.txt").write_text("x")
+    result = server_module.list_directory(path="f.txt")
+    assert "Error" in result
+    assert "not a directory" in result.lower()
+
+
+def test_search_files(project_root_env):
+    """search_files returns matching lines with path and line number."""
+    root = project_root_env
+    (root / "a.py").write_text("x = 1\nfoo bar\nx = 2")
+    (root / "b.py").write_text("no match")
+    result = server_module.search_files(project_path=".", pattern=r"x\s*=")
+    assert "a.py:1:" in result
+    assert "a.py:3:" in result
+    assert "x = 1" in result or "x = 2" in result
+    assert "b.py" not in result
+
+
+def test_search_files_no_matches(project_root_env):
+    """search_files returns (no matches) when pattern not found."""
+    root = project_root_env
+    (root / "a.txt").write_text("hello")
+    result = server_module.search_files(project_path=".", pattern="xyz")
+    assert "no matches" in result
+
+
+def test_search_files_include_glob(project_root_env):
+    """search_files respects include glob."""
+    root = project_root_env
+    (root / "a.py").write_text("needle")
+    (root / "a.txt").write_text("needle")
+    result = server_module.search_files(project_path=".", pattern="needle", include="*.py")
+    assert "a.py" in result
+    assert "a.txt" not in result
+
+
+def test_search_files_traversal_rejected(project_root_env):
+    """search_files rejects project_path traversal."""
+    result = server_module.search_files(project_path="../../../etc", pattern="x")
+    assert "Error" in result
+    assert "root" in result.lower()
+
+
+def test_search_files_invalid_regex(project_root_env):
+    """search_files returns error for invalid regex."""
+    result = server_module.search_files(project_path=".", pattern="[invalid")
+    assert "Error" in result
+    assert "regex" in result.lower()
+
+
+def test_edit_file(project_root_env):
+    """edit_file replaces old_string with new_string."""
+    root = project_root_env
+    (root / "f.txt").write_text("hello world")
+    result = server_module.edit_file(path="f.txt", old_string="world", new_string="there")
+    assert "Replaced" in result
+    assert (root / "f.txt").read_text() == "hello there"
+
+
+def test_edit_file_replace_all(project_root_env):
+    """edit_file with replace_all=True replaces every occurrence."""
+    root = project_root_env
+    (root / "f.txt").write_text("x x x")
+    result = server_module.edit_file(path="f.txt", old_string="x", new_string="y", replace_all=True)
+    assert "3 occurrence" in result
+    assert (root / "f.txt").read_text() == "y y y"
+
+
+def test_edit_file_replace_first(project_root_env):
+    """edit_file with replace_all=False replaces only first."""
+    root = project_root_env
+    (root / "f.txt").write_text("a a a")
+    result = server_module.edit_file(
+        path="f.txt", old_string="a", new_string="b", replace_all=False
+    )
+    assert "1 occurrence" in result
+    assert (root / "f.txt").read_text() == "b a a"
+
+
+def test_edit_file_old_string_not_found(project_root_env):
+    """edit_file returns error when old_string not in file."""
+    root = project_root_env
+    (root / "f.txt").write_text("hello")
+    result = server_module.edit_file(path="f.txt", old_string="xyz", new_string="y")
+    assert "Error" in result
+    assert "not found" in result.lower()
+    assert (root / "f.txt").read_text() == "hello"
+
+
+def test_edit_file_traversal_rejected(project_root_env):
+    """edit_file rejects path traversal."""
+    result = server_module.edit_file(path="../../../etc/passwd", old_string="x", new_string="y")
+    assert "Error" in result
+    assert "root" in result.lower()
+
+
 def test_status(project_root_env):
     """status returns detected type and listing."""
     root = project_root_env

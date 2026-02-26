@@ -26,6 +26,12 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v
 
+      - name: Smoke test (server starts and health responds)
+        run: |
+          MCP_PORT=8765 uv run python server.py &
+          sleep 3
+          curl -sf http://localhost:8765/health | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status')=='ok'"
+
       - name: Ruff check
         run: uv run ruff check .
 

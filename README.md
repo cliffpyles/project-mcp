@@ -54,7 +54,8 @@ Use stdio if you prefer zero “run the server” step and only one client.
 
 ### Configuration
 
-- **`PROJECT_MCP_ROOT`** — Root directory for project paths (default: current working directory). All tool paths (`target_path`, `project_path`, `path`) must resolve under this root; path traversal (e.g. `../`) is rejected. Set this to your workspace or a dedicated projects directory to scope and secure where the server can read/write.
+- **`PROJECT_MCP_ROOT`** — Root directory for project paths (default: current working directory). All tool paths (`target_path`, `project_path`, `path`) must resolve under this root; path traversal (e.g. `../`) is rejected. Set this to your workspace or a dedicated projects directory to scope and secure where the server can read/write. At startup, the server warns if this is set but not a directory or missing.
+- **`PROJECT_MCP_ALLOWED_COMMANDS`** — Comma-separated list of command prefixes allowed by `run_command` (e.g. `python,npm,uv`). If unset, defaults to: python, npm, npx, uv, pip, node, pytest, make.
 - **`MCP_TRANSPORT`** — `http` (default) or `stdio`.
 - **`MCP_PORT`** — Port for HTTP (default: `8000`).
 - **`LOG_LEVEL`** — Logging level (default: `INFO`). Set to `DEBUG` for more verbose tool logs.
@@ -130,7 +131,7 @@ Predefined content is organized by **context** first (folder under `artifacts/`)
 - `artifact://default/snippets/hello.py` — generic hello snippet
 - `artifact://fastapi/templates/fastapi-app` — FastAPI app template
 - `artifact://react/templates/react-component.tsx` — React component template
-- `artifact://data-pipeline/configs/dag.yaml` — data pipeline config (when added)
+- `artifact://data-pipeline/configs/dag.yaml` — data pipeline DAG config
 
 Add new contexts by adding a folder under `artifacts/`; add new types by adding a folder under a context. No server code changes required. Use **Resources** to read these URIs on demand so the LLM does not hold large blobs in context.
 
@@ -140,6 +141,10 @@ Add new contexts by adding a folder under `artifacts/`; add new types by adding 
 | ---------------- | ----------------------------------------------------------------- |
 | `list_artifacts` | List available artifacts (optionally filter by context/type). Returns JSON with `uri` per artifact. |
 | `create_project` | Create project from a template; use `context` to pick the group. Optional `variables` for `{{key}}` substitution. |
+| `read_file`      | Read a file at path (under project root).                         |
+| `list_directory` | List directory contents at path (one level).                      |
+| `search_files`   | Search for regex pattern in project files; optional include/exclude globs. |
+| `edit_file`      | Replace old_string with new_string in file (first or all).        |
 | `write_file`     | Write or overwrite a file under the project root.                 |
 | `run_tests`      | Run tests (pytest or npm test).                                   |
 | `deploy`         | Run deploy (Makefile, npm run deploy, or custom script).          |
