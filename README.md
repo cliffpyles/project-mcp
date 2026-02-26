@@ -131,15 +131,11 @@ project-mcp/
 ├── devenv.yaml        # Devenv inputs
 ├── .envrc             # direnv: use devenv
 ├── pyproject.toml
-├── templates/         # Predefined project templates
-│   ├── fastapi-app/
-│   └── react-component.tsx
-├── configs/           # Default config files
-│   ├── pyproject.toml
-│   ├── tsconfig.json
-│   └── Dockerfile
-├── snippets/          # Code snippets
-└── assets/            # Static assets
+└── artifacts/         # Client-facing predefined content (exposed via Resources)
+    ├── templates/     # Project templates (e.g. fastapi-app, react-component)
+    ├── configs/       # Default config files (pyproject, tsconfig, Dockerfile)
+    ├── snippets/      # Code snippets
+    └── assets/        # Static assets
 ```
 
 ## License

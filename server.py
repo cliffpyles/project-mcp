@@ -16,8 +16,8 @@ from fastmcp import FastMCP
 
 from path_util import resolve_file_path, resolve_project_path
 
-# Artifact root: directory containing server.py (project root)
-_ARTIFACT_ROOT = Path(__file__).resolve().parent
+# Root for client-facing artifacts (templates, configs, snippets, assets)
+_ARTIFACT_ROOT = Path(__file__).resolve().parent / "artifacts"
 
 mcp = FastMCP(
     "ProjectDev",
