@@ -40,7 +40,7 @@ devenv up
 uv run python server.py
 ```
 
-Server base URL: **`http://localhost:8000/mcp`** (port 8000 unless you set `MCP_PORT`). Connect Cursor and other clients to this URL; no need for each client to run the server.
+Server base URL: **`http://localhost:8000/mcp`** (port 8000 unless you set `MCP_PORT`). Connect Cursor and other clients to this URL; no need for each client to run the server. When using HTTP, a **`/health`** endpoint returns `{"status": "ok"}` for load balancers or k8s probes.
 
 **Stdio (alternative)** — Cursor or another client runs the server as a subprocess (one process per client). Set `MCP_TRANSPORT=stdio` or use the fastmcp CLI:
 
@@ -54,9 +54,26 @@ Use stdio if you prefer zero “run the server” step and only one client.
 
 ### Configuration
 
-- **`PROJECT_MCP_ROOT`** — Root directory for project paths (default: current working directory). Paths in tools must resolve under this root.
+- **`PROJECT_MCP_ROOT`** — Root directory for project paths (default: current working directory). All tool paths (`target_path`, `project_path`, `path`) must resolve under this root; path traversal (e.g. `../`) is rejected. Set this to your workspace or a dedicated projects directory to scope and secure where the server can read/write.
 - **`MCP_TRANSPORT`** — `http` (default) or `stdio`.
 - **`MCP_PORT`** — Port for HTTP (default: `8000`).
+- **`LOG_LEVEL`** — Logging level (default: `INFO`). Set to `DEBUG` for more verbose tool logs.
+
+## Running tests
+
+Install dev dependencies (pytest, ruff), then run the test suite:
+
+```bash
+uv sync --extra dev
+uv run pytest tests/ -v
+```
+
+To run linting and format checks (same as CI):
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+```
 
 ## Cursor integration
 
@@ -121,7 +138,8 @@ Add new contexts by adding a folder under `artifacts/`; add new types by adding 
 
 | Tool             | Description                                                       |
 | ---------------- | ----------------------------------------------------------------- |
-| `create_project` | Create project from a template; use `context` to pick the group (e.g. fastapi, react). |
+| `list_artifacts` | List available artifacts (optionally filter by context/type). Returns JSON with `uri` per artifact. |
+| `create_project` | Create project from a template; use `context` to pick the group. Optional `variables` for `{{key}}` substitution. |
 | `write_file`     | Write or overwrite a file under the project root.                 |
 | `run_tests`      | Run tests (pytest or npm test).                                   |
 | `deploy`         | Run deploy (Makefile, npm run deploy, or custom script).          |
@@ -132,6 +150,28 @@ Add new contexts by adding a folder under `artifacts/`; add new types by adding 
 | `update_config`  | Update name or version in pyproject.toml or package.json.         |
 
 All paths are validated against `PROJECT_MCP_ROOT` to prevent path traversal.
+
+## Usage examples
+
+From an MCP client (e.g. Cursor), you can call tools and read resources like this:
+
+**Discover artifacts:** Call `list_artifacts()` (or `list_artifacts(context="fastapi")`) to get a JSON list of artifact URIs, then read any via the Resource `artifact://{context}/{type}/{path}`.
+
+**Create a FastAPI project:**
+```text
+create_project(template_id="fastapi-app", target_path="./my-api", context="fastapi")
+```
+
+**Create a project with template variables:** If the template contains `{{project_name}}` or `{{version}}`, pass them in:
+```text
+create_project(template_id="var-test", target_path="./my-app", context="default", variables={"project_name": "MyApp", "version": "1.0"})
+```
+
+**Write a file:** `write_file(path="src/main.py", content="print('hello')")`
+
+**Project status:** `status(project_path=".")` — returns detected type (Python/Node) and top-level listing.
+
+**Run tests:** `run_tests(project_path=".")` — runs pytest or `npm test` based on project type.
 
 ## Project layout
 

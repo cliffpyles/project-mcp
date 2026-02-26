@@ -6,6 +6,7 @@ project lifecycle operations as Tools. Use with Cursor or any MCP client.
 """
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -13,19 +14,31 @@ import subprocess
 from pathlib import Path
 
 from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
-from artifact_loader import read_artifact
+from artifact_loader import (
+    list_artifact_paths,
+    list_contexts_and_types,
+    read_artifact,
+)
 from path_util import resolve_file_path, resolve_project_path
 
 # Root for client-facing artifacts: artifacts/{context}/{type}/...
 _ARTIFACT_ROOT = Path(__file__).resolve().parent / "artifacts"
+
+# Logging: level from env (default INFO)
+_log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, _log_level, logging.INFO))
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP(
     "ProjectDev",
     instructions=(
         "Use this server to create, update, deploy, debug, test, monitor, and configure "
         "projects. Fetch artifacts via Resources: artifact://{context}/{type}/{path} "
-        "(e.g. artifact://default/configs/pyproject.toml, artifact://fastapi/templates/fastapi-app). "
+        "(e.g. artifact://default/configs/pyproject.toml, "
+        "artifact://fastapi/templates/fastapi-app). "
         "Context: flexible grouping chosen by the maintainer (technology, project type, etc.). "
         "Examples: default (generic), fastapi, react, internal-admin, data-pipeline. "
         "Type: templates, configs, snippets, assets, components, iac."
@@ -36,44 +49,124 @@ mcp = FastMCP(
 
 # ---- Resources: unified artifact:// context/type/path (context-first layout) ----
 
+
 @mcp.resource(
     "artifact://{context}/{type}/{path*}",
     tags={"artifacts"},
     mime_type="text/plain",
 )
 def resource_artifact(context: str, type: str, path: str) -> str:
-    """Read artifact by context, type, and path (e.g. default/templates/fastapi-app, default/configs/pyproject.toml)."""
+    """Read artifact by context, type, path (e.g. default/templates/fastapi-app)."""
     if isinstance(path, list):
         path = "/".join(path)
     try:
         content, _ = read_artifact(_ARTIFACT_ROOT, context, type, path)
         return content
-    except FileNotFoundError as e:
-        return f"# {e}"
+    except FileNotFoundError:
+        logger.warning("Artifact not found: %s/%s/%s", context, type, path)
+        return f"Error: Artifact not found: {context}/{type}/{path}"
 
 
 # ---- Tools: project operations (path-validated, tagged, annotated) ----
+
+
+@mcp.tool(
+    tags={"artifacts", "discovery"},
+    annotations={"readOnlyHint": True},
+)
+def list_artifacts(
+    context: str | None = None,
+    type: str | None = None,
+) -> str:
+    """List artifacts; filter by context/type. Returns JSON with uri per artifact."""
+    pairs = list_contexts_and_types(_ARTIFACT_ROOT)
+    if context is not None:
+        pairs = [(c, t) for c, t in pairs if c == context]
+    if type is not None:
+        pairs = [(c, t) for c, t in pairs if t == type]
+    result: list[dict] = []
+    for c, t in pairs:
+        paths = list_artifact_paths(_ARTIFACT_ROOT, c, t)
+        for p in paths:
+            result.append({"context": c, "type": t, "path": p, "uri": f"artifact://{c}/{t}/{p}"})
+    return json.dumps(result, indent=2)
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health(_request: Request) -> Response:
+    """Health check for load balancers and k8s probes."""
+    return JSONResponse({"status": "ok"})
+
 
 @mcp.tool(
     tags={"create", "files"},
     annotations={"destructiveHint": True},
 )
-def create_project(template_id: str, target_path: str, context: str = "default") -> str:
-    """Create a project from a template. Use context to pick the template group (e.g. fastapi, react, default)."""
+def _substitute_vars(text: str, variables: dict[str, str]) -> str:
+    """Replace {{key}} with variables[key] in text. Leaves {{key}} if key missing."""
+    for key, value in variables.items():
+        text = text.replace("{{" + key + "}}", str(value))
+    return text
+
+
+def create_project(
+    template_id: str,
+    target_path: str,
+    context: str = "default",
+    variables: dict[str, str] | None = None,
+) -> str:
+    """Create a project from a template. Use variables for {{key}} substitution."""
+    logger.info(
+        "create_project template_id=%s target_path=%s context=%s",
+        template_id,
+        target_path,
+        context,
+    )
     try:
         target = resolve_file_path(target_path)
     except ValueError as e:
+        logger.warning("create_project path error: %s", e)
         return f"Error: {e}"
     template_dir = _ARTIFACT_ROOT / context / "templates" / template_id
     if not template_dir.is_dir():
+        logger.warning("Template not found: %s/%s", context, template_id)
         return f"Template not found: {context}/{template_id}"
+    vars_map = variables or {}
     target.mkdir(parents=True, exist_ok=True)
     for item in template_dir.rglob("*"):
         if item.is_file():
             rel = item.relative_to(template_dir)
-            dest = target / rel
+            rel_str = str(rel).replace("\\", "/")
+            if vars_map:
+                rel_str = _substitute_vars(rel_str, vars_map)
+            dest = target / rel_str
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item, dest)
+            if vars_map and item.suffix in (
+                ".py",
+                ".ts",
+                ".tsx",
+                ".js",
+                ".jsx",
+                ".json",
+                ".toml",
+                ".yaml",
+                ".yml",
+                ".md",
+                ".html",
+                ".css",
+                ".sh",
+                ".txt",
+                ".cfg",
+                ".ini",
+            ):
+                try:
+                    content = item.read_text(encoding="utf-8", errors="replace")
+                    content = _substitute_vars(content, vars_map)
+                    dest.write_text(content, encoding="utf-8")
+                except OSError:
+                    shutil.copy2(item, dest)
+            else:
+                shutil.copy2(item, dest)
     return f"Created project at {target} from template {context}/{template_id}"
 
 
@@ -83,9 +176,11 @@ def create_project(template_id: str, target_path: str, context: str = "default")
 )
 def write_file(path: str, content: str) -> str:
     """Write or overwrite a file at path (relative to PROJECT_MCP_ROOT or cwd)."""
+    logger.info("write_file path=%s", path)
     try:
         resolved = resolve_file_path(path)
     except ValueError as e:
+        logger.warning("write_file path error: %s", e)
         return f"Error: {e}"
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
@@ -159,7 +254,9 @@ def deploy(project_path: str, target: str, options: dict | None = None) -> str:
     elif (root / "package.json").exists():
         cmd = ["npm", "run", "deploy"]
     else:
-        return "No deploy script found (set options.script or add Makefile/package.json deploy target)"
+        return (
+            "No deploy script found (set options.script or add Makefile/package.json deploy target)"
+        )
     try:
         result = subprocess.run(
             cmd,
@@ -304,7 +401,7 @@ def get_config(project_path: str, key: str) -> str:
     annotations={"destructiveHint": True},
 )
 def update_config(project_path: str, key: str, value: str) -> str:
-    """Update a config key in project (pyproject.toml or package.json). Only name/version supported."""
+    """Update name or version in pyproject.toml or package.json."""
     try:
         root = resolve_project_path(project_path)
     except ValueError as e:
@@ -331,10 +428,15 @@ def update_config(project_path: str, key: str, value: str) -> str:
     return "No pyproject.toml or package.json found"
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point for the project-mcp CLI."""
     transport = os.environ.get("MCP_TRANSPORT", "http")
     if transport == "http":
         port = int(os.environ.get("MCP_PORT", "8000"))
         mcp.run(transport="http", host="0.0.0.0", port=port)
     else:
         mcp.run()
+
+
+if __name__ == "__main__":
+    main()

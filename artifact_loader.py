@@ -36,7 +36,9 @@ def get_mime(path: Path) -> str:
     return _MIME.get(path.suffix.lower(), "text/plain")
 
 
-def read_artifact(artifact_root: Path, context: str, type_name: str, path_str: str) -> tuple[str, str]:
+def read_artifact(
+    artifact_root: Path, context: str, type_name: str, path_str: str
+) -> tuple[str, str]:
     """
     Read artifact content from artifact_root/context/type/path.
     path_str may contain slashes (e.g. fastapi-app/main.py).
@@ -61,7 +63,8 @@ def read_artifact(artifact_root: Path, context: str, type_name: str, path_str: s
         for p in sorted(full.rglob("*")):
             if p.is_file():
                 rel = p.relative_to(full)
-                parts.append(f"## {rel}\n```\n{p.read_text(encoding='utf-8', errors='replace')}\n```")
+                body = p.read_text(encoding="utf-8", errors="replace")
+                parts.append(f"## {rel}\n```\n{body}\n```")
         return "\n".join(parts), "text/markdown"
     return full.read_text(encoding="utf-8", errors="replace"), get_mime(full)
 
@@ -77,4 +80,21 @@ def list_contexts_and_types(artifact_root: Path) -> list[tuple[str, str]]:
         for type_dir in sorted(context_dir.iterdir()):
             if type_dir.is_dir() and not type_dir.name.startswith("."):
                 out.append((context_dir.name, type_dir.name))
+    return out
+
+
+def list_artifact_paths(artifact_root: Path, context: str, type_name: str) -> list[str]:
+    """List relative paths under artifact_root/context/type (files and dirs)."""
+    base = artifact_root / context / type_name
+    base = base.resolve()
+    if not base.is_dir():
+        return []
+    out: list[str] = []
+    for p in sorted(base.rglob("*")):
+        try:
+            rel = p.relative_to(base)
+        except ValueError:
+            continue
+        # Return path as string with forward slashes
+        out.append(str(rel).replace("\\", "/"))
     return out
