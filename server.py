@@ -14,134 +14,41 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 
+from artifact_loader import read_artifact
 from path_util import resolve_file_path, resolve_project_path
 
-# Root for client-facing artifacts (templates, configs, snippets, assets)
+# Root for client-facing artifacts: artifacts/{context}/{type}/...
 _ARTIFACT_ROOT = Path(__file__).resolve().parent / "artifacts"
 
 mcp = FastMCP(
     "ProjectDev",
     instructions=(
         "Use this server to create, update, deploy, debug, test, monitor, and configure "
-        "projects. Fetch templates and configs via Resources (project://, config://, "
-        "template://, assets://) and run operations via Tools."
+        "projects. Fetch artifacts via Resources: artifact://{context}/{type}/{path} "
+        "(e.g. artifact://default/templates/fastapi-app, artifact://default/configs/pyproject.toml). "
+        "Context: default, react, angular, aws, gcp (folder under artifacts/). "
+        "Type: templates, configs, snippets, assets, components, iac (folder under each context)."
     ),
     list_page_size=50,
 )
 
 
-# ---- Resources: predefined artifacts (tags for visibility) ----
+# ---- Resources: unified artifact:// context/type/path (context-first layout) ----
 
 @mcp.resource(
-    "project://snippets/hello.py",
-    tags={"files", "snippets"},
-    mime_type="text/x-python",
-)
-def resource_snippet_hello_py() -> str:
-    """Minimal Python hello snippet."""
-    path = _ARTIFACT_ROOT / "snippets" / "hello.py"
-    return path.read_text() if path.exists() else "# snippet not found"
-
-
-@mcp.resource(
-    "project://snippets/dockerfile",
-    tags={"files", "snippets"},
+    "artifact://{context}/{type}/{path*}",
+    tags={"artifacts"},
     mime_type="text/plain",
 )
-def resource_snippet_dockerfile() -> str:
-    """Minimal Dockerfile snippet."""
-    path = _ARTIFACT_ROOT / "snippets" / "dockerfile"
-    return path.read_text() if path.exists() else "# snippet not found"
-
-
-@mcp.resource(
-    "config://default/pyproject",
-    tags={"config"},
-    mime_type="text/x-toml",
-)
-def resource_config_pyproject() -> str:
-    """Default pyproject.toml config."""
-    path = _ARTIFACT_ROOT / "configs" / "pyproject.toml"
-    return path.read_text() if path.exists() else ""
-
-
-@mcp.resource(
-    "config://default/tsconfig",
-    tags={"config"},
-    mime_type="application/json",
-)
-def resource_config_tsconfig() -> str:
-    """Default tsconfig.json config."""
-    path = _ARTIFACT_ROOT / "configs" / "tsconfig.json"
-    return path.read_text() if path.exists() else "{}"
-
-
-@mcp.resource(
-    "config://default/dockerfile",
-    tags={"config"},
-    mime_type="text/plain",
-)
-def resource_config_dockerfile() -> str:
-    """Default Dockerfile config."""
-    path = _ARTIFACT_ROOT / "configs" / "Dockerfile"
-    return path.read_text() if path.exists() else ""
-
-
-@mcp.resource(
-    "assets://placeholder.svg",
-    tags={"assets"},
-    mime_type="image/svg+xml",
-)
-def resource_assets_placeholder() -> str:
-    """Placeholder SVG asset."""
-    path = _ARTIFACT_ROOT / "assets" / "placeholder.svg"
-    return path.read_text() if path.exists() else ""
-
-
-# Resource template: template://{name} — named template content
-@mcp.resource(
-    "template://{name}",
-    tags={"templates"},
-    mime_type="text/plain",
-)
-def resource_template_name(name: str) -> str:
-    """Get template content by name (e.g. fastapi-app/main.py, react-component.tsx)."""
-    # Support both "fastapi-app" (directory) and "file.ext" (file in templates/)
-    base = _ARTIFACT_ROOT / "templates"
-    if "/" in name or "\\" in name:
-        path = (base / name).resolve()
-    else:
-        path = (base / name).resolve()
-    if not path.exists():
-        return f"# Template not found: {name}"
-    if path.is_file():
-        return path.read_text()
-    # Directory: return README if present, else list of files
-    readme = path / "README.md"
-    if readme.exists():
-        return readme.read_text()
-    parts = [f"# Template: {name}\n"]
-    for p in sorted(path.rglob("*")):
-        if p.is_file():
-            rel = p.relative_to(path)
-            parts.append(f"## {rel}\n```\n{p.read_text()}\n```")
-    return "\n".join(parts)
-
-
-# config://{type} — config by type
-@mcp.resource(
-    "config://{config_type}",
-    tags={"config", "templates"},
-    mime_type="text/plain",
-)
-def resource_config_type(config_type: str) -> str:
-    """Get config content by type (pyproject, tsconfig, dockerfile)."""
-    known = {"pyproject": "pyproject.toml", "tsconfig": "tsconfig.json", "dockerfile": "Dockerfile"}
-    filename = known.get(config_type.lower())
-    if not filename:
-        return f"# Unknown config type: {config_type}. Known: {list(known)}"
-    path = _ARTIFACT_ROOT / "configs" / filename
-    return path.read_text() if path.exists() else ""
+def resource_artifact(context: str, type: str, path: str) -> str:
+    """Read artifact by context, type, and path (e.g. default/templates/fastapi-app, default/configs/pyproject.toml)."""
+    if isinstance(path, list):
+        path = "/".join(path)
+    try:
+        content, _ = read_artifact(_ARTIFACT_ROOT, context, type, path)
+        return content
+    except FileNotFoundError as e:
+        return f"# {e}"
 
 
 # ---- Tools: project operations (path-validated, tagged, annotated) ----
@@ -156,7 +63,8 @@ def create_project(template_id: str, target_path: str) -> str:
         target = resolve_file_path(target_path)
     except ValueError as e:
         return f"Error: {e}"
-    template_dir = _ARTIFACT_ROOT / "templates" / template_id
+    # Artifacts are context-first: artifacts/{context}/{type}/; default context is "default"
+    template_dir = _ARTIFACT_ROOT / "default" / "templates" / template_id
     if not template_dir.is_dir():
         return f"Template not found: {template_id}"
     target.mkdir(parents=True, exist_ok=True)

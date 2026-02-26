@@ -90,19 +90,27 @@ If your Cursor version uses a different shape (e.g. `transport: "sse"` with a se
 
 Replace `/absolute/path/to/project-mcp` with the real path.
 
-## URI schemes (Resources)
+## Artifacts and URI scheme
 
-Fetch predefined content by URI instead of loading it into context:
+Predefined content is organized by **context** first (folder under `artifacts/`), then **type** (folder under each context). That way React-specific artifacts live under `artifacts/react/`, AWS IaC under `artifacts/aws/`, etc.
 
-| Scheme        | Example                       | Description                                                 |
-| ------------- | ----------------------------- | ----------------------------------------------------------- |
-| `project://`  | `project://snippets/hello.py` | Code/snippet files                                          |
-| `config://`   | `config://default/pyproject`  | Default configs (pyproject, tsconfig, dockerfile)           |
-| `config://`   | `config://pyproject`          | Config by type (template: `config://{config_type}`)         |
-| `template://` | `template://fastapi-app`      | Named template (dir or file; template: `template://{name}`) |
-| `assets://`   | `assets://placeholder.svg`    | Static assets                                               |
+**URI pattern:** `artifact://{context}/{type}/{path}`
 
-Use **Resources** to read these URIs on demand so the LLM does not need to hold large blobs in context.
+| Part      | Purpose | Examples |
+| --------- | ------- | -------- |
+| `context` | Folder under artifacts/ | `default`, `react`, `angular`, `aws`, `gcp` |
+| `type`    | Kind of artifact under that context | `templates`, `configs`, `snippets`, `assets`, `components`, `iac` |
+| `path`    | Relative path under context/type | `fastapi-app`, `pyproject.toml`, `Button.tsx` |
+
+**Examples:**
+
+- `artifact://default/templates/fastapi-app` — default FastAPI app template
+- `artifact://default/configs/pyproject.toml` — default Python config
+- `artifact://default/snippets/hello.py` — default hello snippet
+- `artifact://react/components/Button.tsx` — React-specific component (when added under `artifacts/react/components/`)
+- `artifact://aws/iac/stack.yaml` — AWS IaC (when added under `artifacts/aws/iac/`)
+
+Add new contexts by adding a folder under `artifacts/`; add new types by adding a folder under a context. No server code changes required. Use **Resources** to read these URIs on demand so the LLM does not hold large blobs in context.
 
 ## Tools
 
@@ -124,18 +132,21 @@ All paths are validated against `PROJECT_MCP_ROOT` to prevent path traversal.
 
 ```
 project-mcp/
-├── server.py          # FastMCP app and registration
-├── path_util.py       # Path validation helpers
-├── fastmcp.json       # FastMCP project config
-├── devenv.nix         # Nix + devenv (packages, process)
-├── devenv.yaml        # Devenv inputs
-├── .envrc             # direnv: use devenv
+├── server.py           # FastMCP app and registration
+├── path_util.py        # Path validation helpers
+├── artifact_loader.py  # Artifact discovery and read (type/context/path)
+├── fastmcp.json        # FastMCP project config
+├── devenv.nix          # Nix + devenv (packages, process)
+├── devenv.yaml         # Devenv inputs
+├── .envrc              # direnv: use devenv
 ├── pyproject.toml
-└── artifacts/         # Client-facing predefined content (exposed via Resources)
-    ├── templates/     # Project templates (e.g. fastapi-app, react-component)
-    ├── configs/       # Default config files (pyproject, tsconfig, Dockerfile)
-    ├── snippets/      # Code snippets
-    └── assets/        # Static assets
+└── artifacts/          # Client-facing content: artifact://{context}/{type}/{path}
+    └── default/        # context folder
+        ├── templates/  # fastapi-app, react-component.tsx
+        ├── configs/    # pyproject.toml, tsconfig.json, Dockerfile
+        ├── snippets/   # hello.py, dockerfile
+        └── assets/     # placeholder.svg
+    # Add more contexts as folders: react/, angular/, aws/, gcp/, each with their own types
 ```
 
 ## License
