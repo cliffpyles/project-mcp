@@ -2,9 +2,22 @@
 
 A [FastMCP](https://gofastmcp.com/) server that exposes predefined artifacts (templates, configs, code snippets, assets) as **Resources** and project lifecycle operations as **Tools**. Use it from [Cursor](https://cursor.com/) or any MCP client to create, update, deploy, debug, test, monitor, and configure projects with minimal token usage.
 
+**Recommended: HTTP transport.** Run the server once; all clients (Cursor, other IDEs, CLIs) connect to the same URL. One process, shared use, no per-client spawn.
+
 ## Setup
 
-### Dependencies
+### Option A: Nix + devenv (recommended)
+
+With [Nix](https://nixos.org/) and [devenv](https://devenv.sh/) installed:
+
+```bash
+cd project-mcp
+devenv up
+```
+
+This installs Python and uv, runs `uv sync`, and starts the MCP server on **HTTP** at `http://localhost:8000/mcp`. Leave it running; point Cursor and other clients at that URL. Use `direnv allow` if you use direnv (optional for `devenv up`).
+
+### Option B: uv only
 
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv)
@@ -15,38 +28,47 @@ cd project-mcp
 uv sync
 ```
 
-### Configuration
-
-Optional environment variables:
-
-- **`PROJECT_MCP_ROOT`** — Root directory for all project paths (default: current working directory). Paths passed to tools must resolve under this root.
-- **`MCP_TRANSPORT`** — `stdio` (default) or `http`.
-- **`MCP_PORT`** — Port for HTTP transport (default: `8000`).
-
 ## Running the server
 
-**Stdio (default, for Cursor):**
+**HTTP (recommended)** — one server for all clients:
 
 ```bash
-# From project root (uses fastmcp from project venv)
-uv run fastmcp run fastmcp.json
+# With devenv (starts HTTP server)
+devenv up
 
-# Or run server module directly
+# Or with uv only (HTTP is the default)
 uv run python server.py
 ```
 
-**HTTP (remote):**
+Server base URL: **`http://localhost:8000/mcp`** (port 8000 unless you set `MCP_PORT`). Connect Cursor and other clients to this URL; no need for each client to run the server.
+
+**Stdio (alternative)** — Cursor or another client runs the server as a subprocess (one process per client). Set `MCP_TRANSPORT=stdio` or use the fastmcp CLI:
 
 ```bash
-MCP_TRANSPORT=http MCP_PORT=8000 uv run python server.py
-# Server at http://localhost:8000/mcp
+MCP_TRANSPORT=stdio uv run python server.py
+# or
+uv run fastmcp run fastmcp.json
 ```
+
+Use stdio if you prefer zero “run the server” step and only one client.
+
+### Configuration
+
+- **`PROJECT_MCP_ROOT`** — Root directory for project paths (default: current working directory). Paths in tools must resolve under this root.
+- **`MCP_TRANSPORT`** — `http` (default) or `stdio`.
+- **`MCP_PORT`** — Port for HTTP (default: `8000`).
 
 ## Cursor integration
 
-Add the server to Cursor’s MCP settings (e.g. **Settings → MCP** or `.cursor/mcp.json`). Use `uv` so the server runs with the project’s virtualenv (the `fastmcp` CLI is not on PATH outside the project).
+**HTTP (recommended):** Run the server once (e.g. `devenv up` or the HTTP command above), then add the server in Cursor by **URL**:
 
-**Using `uv run fastmcp run` (recommended):**
+1. **Cursor Settings** → **Features** → **MCP** → **Add new MCP server**
+2. Choose **SSE** (or the HTTP/URL option your Cursor version offers)
+3. Set the URL to **`http://localhost:8000/mcp`** (or your host/port; see [Cursor + FastMCP](https://gofastmcp.com/integrations/cursor) for the exact endpoint format Cursor expects)
+
+All Cursor windows and other clients can use the same running server.
+
+**Stdio (alternative):** Cursor runs the server itself. In MCP settings use a **command** instead of a URL:
 
 ```json
 {
@@ -60,49 +82,35 @@ Add the server to Cursor’s MCP settings (e.g. **Settings → MCP** or `.cursor
 }
 ```
 
-**Using `uv run python`:**
-
-```json
-{
-  "mcpServers": {
-    "project-dev": {
-      "command": "uv",
-      "args": ["run", "python", "server.py"],
-      "cwd": "/absolute/path/to/project-mcp"
-    }
-  }
-}
-```
-
-Replace `/absolute/path/to/project-mcp` with the real path. For more options see [Cursor + FastMCP](https://gofastmcp.com/integrations/cursor).
+Replace `/absolute/path/to/project-mcp` with the real path.
 
 ## URI schemes (Resources)
 
 Fetch predefined content by URI instead of loading it into context:
 
-| Scheme        | Example                          | Description                          |
-|---------------|-----------------------------------|--------------------------------------|
-| `project://` | `project://snippets/hello.py`     | Code/snippet files                   |
-| `config://`  | `config://default/pyproject`      | Default configs (pyproject, tsconfig, dockerfile) |
-| `config://`  | `config://pyproject`              | Config by type (template: `config://{config_type}`) |
-| `template://`| `template://fastapi-app`          | Named template (dir or file; template: `template://{name}`) |
-| `assets://`  | `assets://placeholder.svg`        | Static assets                        |
+| Scheme        | Example                       | Description                                                 |
+| ------------- | ----------------------------- | ----------------------------------------------------------- |
+| `project://`  | `project://snippets/hello.py` | Code/snippet files                                          |
+| `config://`   | `config://default/pyproject`  | Default configs (pyproject, tsconfig, dockerfile)           |
+| `config://`   | `config://pyproject`          | Config by type (template: `config://{config_type}`)         |
+| `template://` | `template://fastapi-app`      | Named template (dir or file; template: `template://{name}`) |
+| `assets://`   | `assets://placeholder.svg`    | Static assets                                               |
 
 Use **Resources** to read these URIs on demand so the LLM does not need to hold large blobs in context.
 
 ## Tools
 
-| Tool            | Description |
-|-----------------|-------------|
-| `create_project`| Create project from a template (e.g. `fastapi-app`). |
-| `write_file`    | Write or overwrite a file under the project root. |
-| `run_tests`     | Run tests (pytest or npm test). |
-| `deploy`        | Run deploy (Makefile, npm run deploy, or custom script). |
-| `run_command`   | Run an allowed command in project dir (python, npm, uv, etc.). |
-| `status`        | Project status and detected type. |
-| `get_logs`      | Recent log content from `.log` files. |
-| `get_config`    | Read config key (e.g. name, version) from pyproject/package.json. |
-| `update_config` | Update name or version in pyproject.toml or package.json. |
+| Tool             | Description                                                       |
+| ---------------- | ----------------------------------------------------------------- |
+| `create_project` | Create project from a template (e.g. `fastapi-app`).              |
+| `write_file`     | Write or overwrite a file under the project root.                 |
+| `run_tests`      | Run tests (pytest or npm test).                                   |
+| `deploy`         | Run deploy (Makefile, npm run deploy, or custom script).          |
+| `run_command`    | Run an allowed command in project dir (python, npm, uv, etc.).    |
+| `status`         | Project status and detected type.                                 |
+| `get_logs`       | Recent log content from `.log` files.                             |
+| `get_config`     | Read config key (e.g. name, version) from pyproject/package.json. |
+| `update_config`  | Update name or version in pyproject.toml or package.json.         |
 
 All paths are validated against `PROJECT_MCP_ROOT` to prevent path traversal.
 
@@ -113,6 +121,9 @@ project-mcp/
 ├── server.py          # FastMCP app and registration
 ├── path_util.py       # Path validation helpers
 ├── fastmcp.json       # FastMCP project config
+├── devenv.nix         # Nix + devenv (packages, process)
+├── devenv.yaml        # Devenv inputs
+├── .envrc             # direnv: use devenv
 ├── pyproject.toml
 ├── templates/         # Predefined project templates
 │   ├── fastapi-app/

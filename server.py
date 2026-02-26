@@ -424,7 +424,7 @@ def update_config(project_path: str, key: str, value: str) -> str:
 
 
 if __name__ == "__main__":
-    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    transport = os.environ.get("MCP_TRANSPORT", "http")
     if transport == "http":
         port = int(os.environ.get("MCP_PORT", "8000"))
         mcp.run(transport="http", host="0.0.0.0", port=port)

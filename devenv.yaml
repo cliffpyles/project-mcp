@@ -1,0 +1,4 @@
+# Devenv inputs; lock with: devenv update
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling

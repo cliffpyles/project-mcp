@@ -22,3 +22,8 @@ dist/
 
 # uv
 .uv/
+
+# devenv / direnv
+devenv.lock
+.direnv/
+.devenv/
