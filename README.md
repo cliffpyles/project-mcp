@@ -92,23 +92,28 @@ Replace `/absolute/path/to/project-mcp` with the real path.
 
 ## Artifacts and URI scheme
 
-Predefined content is organized by **context** first (folder under `artifacts/`), then **type** (folder under each context). That way React-specific artifacts live under `artifacts/react/`, AWS IaC under `artifacts/aws/`, etc.
+Predefined content is organized by **context** first (folder under `artifacts/`), then **type** (folder under each context). **Context** is a flexible grouping—maintainers choose the strategy that fits their needs (e.g. by technology, project type, or other axes).
 
 **URI pattern:** `artifact://{context}/{type}/{path}`
 
 | Part      | Purpose | Examples |
 | --------- | ------- | -------- |
-| `context` | Folder under artifacts/ | `default`, `react`, `angular`, `aws`, `gcp` |
+| `context` | Grouping chosen by maintainer | `default` (generic), `fastapi`, `react`, `internal-admin`, `data-pipeline` |
 | `type`    | Kind of artifact under that context | `templates`, `configs`, `snippets`, `assets`, `components`, `iac` |
 | `path`    | Relative path under context/type | `fastapi-app`, `pyproject.toml`, `Button.tsx` |
 
-**Examples:**
+**Context examples:**
+- By technology: `fastapi`, `react`, `aws`, `gcp`
+- By project type: `internal-admin`, `data-pipeline`, `research-notebook`, `app-documentation`
+- `default`: generic, stack-agnostic artifacts only
 
-- `artifact://default/templates/fastapi-app` — default FastAPI app template
-- `artifact://default/configs/pyproject.toml` — default Python config
-- `artifact://default/snippets/hello.py` — default hello snippet
-- `artifact://react/components/Button.tsx` — React-specific component (when added under `artifacts/react/components/`)
-- `artifact://aws/iac/stack.yaml` — AWS IaC (when added under `artifacts/aws/iac/`)
+**URI examples:**
+
+- `artifact://default/configs/pyproject.toml` — generic Python config
+- `artifact://default/snippets/hello.py` — generic hello snippet
+- `artifact://fastapi/templates/fastapi-app` — FastAPI app template
+- `artifact://react/templates/react-component.tsx` — React component template
+- `artifact://data-pipeline/configs/dag.yaml` — data pipeline config (when added)
 
 Add new contexts by adding a folder under `artifacts/`; add new types by adding a folder under a context. No server code changes required. Use **Resources** to read these URIs on demand so the LLM does not hold large blobs in context.
 
@@ -116,7 +121,7 @@ Add new contexts by adding a folder under `artifacts/`; add new types by adding 
 
 | Tool             | Description                                                       |
 | ---------------- | ----------------------------------------------------------------- |
-| `create_project` | Create project from a template (e.g. `fastapi-app`).              |
+| `create_project` | Create project from a template; use `context` to pick the group (e.g. fastapi, react). |
 | `write_file`     | Write or overwrite a file under the project root.                 |
 | `run_tests`      | Run tests (pytest or npm test).                                   |
 | `deploy`         | Run deploy (Makefile, npm run deploy, or custom script).          |
@@ -141,12 +146,15 @@ project-mcp/
 ├── .envrc              # direnv: use devenv
 ├── pyproject.toml
 └── artifacts/          # Client-facing content: artifact://{context}/{type}/{path}
-    └── default/        # context folder
-        ├── templates/  # fastapi-app, react-component.tsx
-        ├── configs/    # pyproject.toml, tsconfig.json, Dockerfile
-        ├── snippets/   # hello.py, dockerfile
-        └── assets/     # placeholder.svg
-    # Add more contexts as folders: react/, angular/, aws/, gcp/, each with their own types
+    ├── default/       # generic, stack-agnostic only
+    │   ├── configs/   # pyproject.toml, tsconfig.json, Dockerfile
+    │   ├── snippets/  # hello.py
+    │   └── assets/    # placeholder.svg
+    ├── fastapi/       # context: technology
+    │   └── templates/ # fastapi-app
+    ├── react/         # context: technology
+    │   └── templates/ # react-component.tsx
+    # Add contexts as needed: internal-admin/, data-pipeline/, aws/, gcp/, etc.
 ```
 
 ## License

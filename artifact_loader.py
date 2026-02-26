@@ -1,11 +1,13 @@
 """
 Artifact discovery and loading for the project-mcp server.
 
-Artifacts are organized under artifacts/{context}/{type}/ so that:
-- context: default, react, angular, aws, gcp, ... (folder = context)
+Artifacts are organized under artifacts/{context}/{type}/:
+- context: A flexible grouping chosen by the maintainer (e.g. technology: fastapi, react;
+  project type: internal-admin, data-pipeline, research-notebook; or other strategies).
 - type: templates, configs, snippets, assets, components, iac, ... (under each context)
 
-Adding new contexts or types is done by adding directories; no server code changes.
+The "default" context holds generic, stack-agnostic artifacts. Add new contexts or types
+by adding directories; no server code changes.
 """
 
 from pathlib import Path

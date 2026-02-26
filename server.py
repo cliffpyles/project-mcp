@@ -25,9 +25,10 @@ mcp = FastMCP(
     instructions=(
         "Use this server to create, update, deploy, debug, test, monitor, and configure "
         "projects. Fetch artifacts via Resources: artifact://{context}/{type}/{path} "
-        "(e.g. artifact://default/templates/fastapi-app, artifact://default/configs/pyproject.toml). "
-        "Context: default, react, angular, aws, gcp (folder under artifacts/). "
-        "Type: templates, configs, snippets, assets, components, iac (folder under each context)."
+        "(e.g. artifact://default/configs/pyproject.toml, artifact://fastapi/templates/fastapi-app). "
+        "Context: flexible grouping chosen by the maintainer (technology, project type, etc.). "
+        "Examples: default (generic), fastapi, react, internal-admin, data-pipeline. "
+        "Type: templates, configs, snippets, assets, components, iac."
     ),
     list_page_size=50,
 )
@@ -57,16 +58,15 @@ def resource_artifact(context: str, type: str, path: str) -> str:
     tags={"create", "files"},
     annotations={"destructiveHint": True},
 )
-def create_project(template_id: str, target_path: str) -> str:
-    """Create a new project from a predefined template (e.g. fastapi-app)."""
+def create_project(template_id: str, target_path: str, context: str = "default") -> str:
+    """Create a project from a template. Use context to pick the template group (e.g. fastapi, react, default)."""
     try:
         target = resolve_file_path(target_path)
     except ValueError as e:
         return f"Error: {e}"
-    # Artifacts are context-first: artifacts/{context}/{type}/; default context is "default"
-    template_dir = _ARTIFACT_ROOT / "default" / "templates" / template_id
+    template_dir = _ARTIFACT_ROOT / context / "templates" / template_id
     if not template_dir.is_dir():
-        return f"Template not found: {template_id}"
+        return f"Template not found: {context}/{template_id}"
     target.mkdir(parents=True, exist_ok=True)
     for item in template_dir.rglob("*"):
         if item.is_file():
@@ -74,7 +74,7 @@ def create_project(template_id: str, target_path: str) -> str:
             dest = target / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item, dest)
-    return f"Created project at {target} from template {template_id}"
+    return f"Created project at {target} from template {context}/{template_id}"
 
 
 @mcp.tool(
